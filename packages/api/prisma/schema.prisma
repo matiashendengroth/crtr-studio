@@ -1,0 +1,237 @@
+// CRTR Studio - Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String   // Hashed with bcrypt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  projects  Project[]
+  
+  @@index([email])
+}
+
+// ============================================
+// PROJECT & SECTIONS
+// ============================================
+
+model Project {
+  id          String        @id @default(cuid())
+  userId      String
+  title       String
+  topic       String        @db.Text
+  duration    Int           // Target duration in seconds (default 900 = 15 min)
+  status      ProjectStatus @default(DRAFT)
+  script      String?       @db.Text // AI-generated script
+  totalCost   Float         @default(0) // Track AI costs
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sections    Section[]
+  exportJobs  ExportJob[]
+  costs       GenerationCost[]
+  
+  @@index([userId])
+  @@index([status])
+}
+
+enum ProjectStatus {
+  DRAFT
+  GENERATING_SCRIPT
+  SCRIPT_READY
+  GENERATING_SCENES
+  SCENES_READY
+  GENERATING_VIDEOS
+  COMPLETE
+  EXPORTED
+  FAILED
+}
+
+model Section {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  order     Int
+  createdAt DateTime @default(now())
+  
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenes    Scene[]
+  
+  @@index([projectId])
+  @@index([projectId, order])
+}
+
+// ============================================
+// SCENES & SHOTS
+// ============================================
+
+model Scene {
+  id                 String      @id @default(cuid())
+  sectionId          String
+  projectId          String
+  order              Int
+  name               String      // e.g., "Introduction to Black Holes"
+  description        String?     @db.Text
+  narration          String      @db.Text  // Full narration for this scene
+  duration           Int         // Total scene duration (sum of shots)
+  
+  // Scene-level audio (combined from all shot narrations)
+  audioUrl           String?
+  
+  // Metadata
+  generationCost     Float       @default(0)
+  status             SceneStatus @default(PENDING)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  
+  section            Section     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  shots              Shot[]
+  
+  @@index([projectId])
+  @@index([sectionId])
+  @@index([status])
+}
+
+model Shot {
+  id                 String      @id @default(cuid())
+  sceneId            String
+  projectId          String
+  order              Int         // Shot order within scene
+  shotType           ShotType
+  shotAngle          ShotAngle
+  visualPrompt       String      @db.Text
+  duration           Int         // Seconds (typically 5-12s per shot)
+  
+  // Generated Assets
+  imageUrl           String?
+  imageSource        String?     // 'nasa' | 'pexels' | 'hubble' | 'fal_ai'
+  imageLicense       String?     // 'public_domain' | 'pexels' | 'attribution_required'
+  imageAttribution   String?     // Attribution text if required
+  stockMediaId       String?     // ID from stock API
+  videoUrl           String?
+  thumbnailUrl       String?
+  
+  // Video Generation Metadata
+  videoJobId         String?     // Kling job ID
+  startingFrameUrl   String?     // For AI_VIDEO shots
+  
+  // Shot Sequencing (for v2v continuity)
+  previousShotId     String?
+  previousShot       Shot?       @relation("ShotSequence", fields: [previousShotId], references: [id], onDelete: SetNull)
+  nextShots          Shot[]      @relation("ShotSequence")
+  
+  // Metadata
+  generationAttempts Int         @default(0)
+  generationCost     Float       @default(0)
+  status             ShotStatus  @default(PENDING)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  
+  scene              Scene       @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  
+  @@index([projectId])
+  @@index([sceneId])
+  @@index([sceneId, order])
+  @@index([status])
+  @@index([shotType])
+}
+
+enum ShotType {
+  AI_VIDEO         // 50% - Kling AI dynamic video
+  IMAGE_EFFECT     // 30% - Stock media or AI-generated image + effects
+  MOTION_GRAPHIC   // 20% - User creates in DaVinci/After Effects
+}
+
+enum ShotAngle {
+  EXTREME_WIDE     // Establishing shot, landscape
+  WIDE             // Full body, context
+  MEDIUM           // Waist up, main action
+  CLOSE_UP         // Face, detail focus
+  EXTREME_CLOSE_UP // Eyes, small details
+  OVER_SHOULDER    // Conversation, POV
+  POV              // First person perspective
+  DETAIL           // Macro, object focus
+  AERIAL           // Drone, top-down
+  B_ROLL           // Supporting footage
+}
+
+enum SceneStatus {
+  PENDING
+  QUEUED
+  GENERATING
+  COMPLETE
+  FAILED
+}
+
+enum ShotStatus {
+  PENDING
+  QUEUED
+  GENERATING
+  COMPLETE
+  FAILED
+}
+
+// ============================================
+// EXPORT JOBS
+// ============================================
+
+model ExportJob {
+  id           String       @id @default(cuid())
+  projectId    String
+  status       ExportStatus @default(PENDING)
+  downloadUrl  String?
+  errorMessage String?      @db.Text
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  expiresAt    DateTime?    // 7 days after creation
+  
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  @@index([projectId])
+  @@index([status])
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETE
+  FAILED
+}
+
+// ============================================
+// COST TRACKING
+// ============================================
+
+model GenerationCost {
+  id          String   @id @default(cuid())
+  projectId   String
+  sceneId     String?
+  type        String   // 'script' | 'scene' | 'image' | 'video' | 'audio'
+  cost        Float
+  metadata    Json?    // Store service name, resolution, duration, etc.
+  environment String   // 'development' | 'production'
+  timestamp   DateTime @default(now())
+  
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  @@index([projectId])
+  @@index([type])
+  @@index([environment])
+}
+

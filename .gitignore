@@ -1,47 +1,55 @@
-# Node modules
-**/node_modules/
+# Dependencies
+node_modules/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
 
-# Build artifacts
-**/dist/
-**/build/
-
-# Turbo & Docusaurus
-**/.turbo/
-**/.docusaurus
-
-# Misc files
-.DS_Store
+# Environment variables
+.env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*.local
+.env.development
+.env.production
 
-# Debug logs
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Logs
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
 
-# Local Netlify folder
-.netlify
-
-# IDE specific files
-.idea
-.vscode
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
 *.swp
 *.swo
+*~
+.DS_Store
 
-# TypeScript
-*.tsbuildinfo
+# Testing
+coverage/
+.nyc_output/
 
-# Cache
-.cache
-.temp
+# Prisma
+packages/api/prisma/migrations/
+!packages/api/prisma/schema.prisma
 
-# Tarballs
-**/*.tgz
+# Docker
+docker-compose.override.yml
 
-
-# Documentation
-packages/*/docs/
-!packages/documentation/docs/
+# Temp files
+tmp/
+temp/
+*.tmp
